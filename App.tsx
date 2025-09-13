@@ -315,7 +315,7 @@ const TemperatureConverter: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             return;
         }
 
-        let c = 0, f = 0, k = 0;
+        let c = NaN, f = NaN, k = NaN;
         if (name === 'celsius') {
             c = valNum;
             f = (c * 9/5) + 32;
@@ -329,11 +329,13 @@ const TemperatureConverter: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             c = k - 273.15;
             f = (c * 9/5) + 32;
         }
+        
+        const format = (num: number) => parseFloat(num.toPrecision(6)).toString();
 
         setValues({
-            celsius: c.toFixed(2),
-            fahrenheit: f.toFixed(2),
-            kelvin: k.toFixed(2),
+            celsius: name === 'celsius' ? value : format(c),
+            fahrenheit: name === 'fahrenheit' ? value : format(f),
+            kelvin: name === 'kelvin' ? value : format(k),
         });
     };
     
@@ -357,47 +359,60 @@ const TemperatureConverter: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     );
 };
 
-const LengthConverter: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+// --- Refactored Unit Converters ---
+
+interface Unit { name: string; factor: number; }
+interface Units { [key: string]: Unit; }
+
+const unitConvert = (value: string, from: string, to: string, units: Units): string => {
+    const valNum = parseFloat(value);
+    if (isNaN(valNum)) return '';
+    const baseValue = valNum * units[from].factor;
+    const result = baseValue / units[to].factor;
+    if (result === 0) return '0';
+    return parseFloat(result.toPrecision(8)).toString();
+};
+
+const BaseUnitConverter: React.FC<{ 
+    title: string;
+    units: Units;
+    initialFrom: string;
+    initialTo: string;
+    onBack: () => void; 
+}> = ({ title, units, initialFrom, initialTo, onBack }) => {
     const [fromValue, setFromValue] = useState('1');
-    const [toValue, setToValue] = useState('');
-    const [fromUnit, setFromUnit] = useState('m');
-    const [toUnit, setToUnit] = useState('ft');
-    
-    const units = {
-        m: { name: 'متر', factor: 1 },
-        km: { name: 'كيلومتر', factor: 1000 },
-        cm: { name: 'سنتيمتر', factor: 0.01 },
-        mi: { name: 'ميل', factor: 1609.34 },
-        ft: { name: 'قدم', factor: 0.3048 },
-        in: { name: 'بوصة', factor: 0.0254 },
+    const [toValue, setToValue] = useState(() => unitConvert('1', initialFrom, initialTo, units));
+    const [fromUnit, setFromUnit] = useState(initialFrom);
+    const [toUnit, setToUnit] = useState(initialTo);
+
+    const handleValueChange = (val: string, from: 'from' | 'to') => {
+        if (from === 'from') {
+            setFromValue(val);
+            setToValue(unitConvert(val, fromUnit, toUnit, units));
+        } else {
+            setToValue(val);
+            setFromValue(unitConvert(val, toUnit, fromUnit, units));
+        }
     };
-
-    const convert = useCallback((value: string, from: string, to: string) => {
-        const valNum = parseFloat(value);
-        if (isNaN(valNum)) return '';
-        const meters = valNum * units[from as keyof typeof units].factor;
-        const result = meters / units[to as keyof typeof units].factor;
-        return result.toFixed(4);
-    }, [units]);
-
-    useMemo(() => {
-        setToValue(convert(fromValue, fromUnit, toUnit));
-    }, [fromValue, fromUnit, toUnit, convert]);
-
-    const handleFromChange = (e: React.ChangeEvent<HTMLInputElement>) => setFromValue(e.target.value);
-    const handleToChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setToValue(e.target.value)
-        setFromValue(convert(e.target.value, toUnit, fromUnit));
+    
+    const handleUnitChange = (unit: string, from: 'from' | 'to') => {
+        if (from === 'from') {
+            setFromUnit(unit);
+            setToValue(unitConvert(fromValue, unit, toUnit, units));
+        } else {
+            setToUnit(unit);
+            setToValue(unitConvert(fromValue, fromUnit, unit, units));
+        }
     };
 
     return (
-        <ConverterScaffold title="محول الطول" onBack={onBack}>
+        <ConverterScaffold title={title} onBack={onBack}>
             <div className="space-y-4">
                  <div>
                     <label className={labelClasses}>من</label>
                     <div className="flex gap-2">
-                        <input type="number" value={fromValue} onChange={handleFromChange} className={inputClasses} />
-                        <select value={fromUnit} onChange={e => setFromUnit(e.target.value)} className={inputClasses + " w-1/3"}>
+                        <input type="number" value={fromValue} onChange={e => handleValueChange(e.target.value, 'from')} className={inputClasses} />
+                        <select value={fromUnit} onChange={e => handleUnitChange(e.target.value, 'from')} className={inputClasses + " w-1/3"}>
                             {Object.entries(units).map(([key, {name}]) => <option key={key} value={key}>{name}</option>)}
                         </select>
                     </div>
@@ -405,8 +420,8 @@ const LengthConverter: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                  <div>
                     <label className={labelClasses}>إلى</label>
                     <div className="flex gap-2">
-                        <input type="number" value={toValue} onChange={handleToChange} className={inputClasses} />
-                        <select value={toUnit} onChange={e => setToUnit(e.target.value)} className={inputClasses + " w-1/3"}>
+                        <input type="number" value={toValue} onChange={e => handleValueChange(e.target.value, 'to')} className={inputClasses} />
+                        <select value={toUnit} onChange={e => handleUnitChange(e.target.value, 'to')} className={inputClasses + " w-1/3"}>
                            {Object.entries(units).map(([key, {name}]) => <option key={key} value={key}>{name}</option>)}
                         </select>
                     </div>
@@ -415,6 +430,83 @@ const LengthConverter: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </ConverterScaffold>
     );
 };
+
+const lengthUnits: Units = {
+    m: { name: 'متر', factor: 1 },
+    km: { name: 'كيلومتر', factor: 1000 },
+    cm: { name: 'سنتيمتر', factor: 0.01 },
+    mi: { name: 'ميل', factor: 1609.34 },
+    ft: { name: 'قدم', factor: 0.3048 },
+    in: { name: 'بوصة', factor: 0.0254 },
+};
+const massUnits: Units = {
+    kg: { name: 'كيلوجرام', factor: 1 },
+    g: { name: 'جرام', factor: 0.001 },
+    lb: { name: 'رطل', factor: 0.453592 },
+    oz: { name: 'أونصة', factor: 0.0283495 },
+};
+const areaUnits: Units = {
+    sqm: { name: 'متر مربع', factor: 1 },
+    sqkm: { name: 'كم مربع', factor: 1000000 },
+    sqft: { name: 'قدم مربع', factor: 0.092903 },
+    acre: { name: 'فدان', factor: 4046.86 },
+};
+const dataUnits: Units = {
+    B: { name: 'بايت', factor: 1 },
+    KB: { name: 'كيلوبايت', factor: 1024 },
+    MB: { name: 'ميجابايت', factor: 1024**2 },
+    GB: { name: 'جيجابايت', factor: 1024**3 },
+    TB: { name: 'تيرابايت', factor: 1024**4 },
+};
+
+const LengthConverter: React.FC<{ onBack: () => void }> = ({ onBack }) => <BaseUnitConverter title="محول الطول" units={lengthUnits} initialFrom="m" initialTo="ft" onBack={onBack} />;
+const MassConverter: React.FC<{ onBack: () => void }> = ({ onBack }) => <BaseUnitConverter title="محول الكتلة" units={massUnits} initialFrom="kg" initialTo="lb" onBack={onBack} />;
+const AreaConverter: React.FC<{ onBack: () => void }> = ({ onBack }) => <BaseUnitConverter title="محول المساحة" units={areaUnits} initialFrom="sqm" initialTo="sqft" onBack={onBack} />;
+const DataConverter: React.FC<{ onBack: () => void }> = ({ onBack }) => <BaseUnitConverter title="محول البيانات" units={dataUnits} initialFrom="MB" initialTo="GB" onBack={onBack} />;
+
+const DiscountCalculator: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+    const [price, setPrice] = useState('');
+    const [discount, setDiscount] = useState('');
+
+    const priceN = parseFloat(price);
+    const discountN = parseFloat(discount);
+
+    let saved = NaN;
+    let finalPrice = NaN;
+
+    if (!isNaN(priceN) && !isNaN(discountN) && priceN > 0 && discountN >= 0) {
+        saved = priceN * (discountN / 100);
+        finalPrice = priceN - saved;
+    }
+    
+    return (
+        <ConverterScaffold title="حاسبة الخصم" onBack={onBack}>
+            <div className="space-y-4">
+                 <div>
+                    <label htmlFor="price" className={labelClasses}>السعر الأصلي</label>
+                    <input type="number" id="price" value={price} onChange={e => setPrice(e.target.value)} className={inputClasses} placeholder="e.g. 150" />
+                </div>
+                 <div>
+                    <label htmlFor="discount" className={labelClasses}>نسبة الخصم (%)</label>
+                    <input type="number" id="discount" value={discount} onChange={e => setDiscount(e.target.value)} className={inputClasses} placeholder="e.g. 25" />
+                </div>
+                 { !isNaN(finalPrice) && (
+                    <div className="mt-6 p-4 bg-gray-800 rounded-lg text-center space-y-2 fade-in">
+                        <div>
+                            <p className="text-gray-400">السعر النهائي:</p>
+                            <p className="text-3xl font-bold text-green-400">{finalPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                        </div>
+                         <div>
+                            <p className="text-gray-400">لقد وفرت:</p>
+                            <p className="text-xl font-bold text-yellow-400">{saved.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </ConverterScaffold>
+    );
+};
+
 
 const GenericConverter: React.FC<{ name: string; onBack: () => void }> = ({ name, onBack }) => {
     return (
@@ -426,7 +518,6 @@ const GenericConverter: React.FC<{ name: string; onBack: () => void }> = ({ name
         </ConverterScaffold>
     );
 }
-
 
 const UnitConverter: React.FC = () => {
     const [activeConverter, setActiveConverter] = useState<string | null>(null);
@@ -462,11 +553,18 @@ const UnitConverter: React.FC = () => {
         'مؤشر كتلة الجسم': BMICalculator,
         'الحرارة': TemperatureConverter,
         'الطول': LengthConverter,
+        'الكتلة': MassConverter,
+        'المساحة': AreaConverter,
+        'البيانات': DataConverter,
+        'الخصم': DiscountCalculator,
     };
     
     if (activeConverter) {
-        const ComponentToRender = componentsMap[activeConverter] || GenericConverter;
-        return <ComponentToRender name={activeConverter} onBack={handleBack} />;
+        const ComponentToRender = componentsMap[activeConverter];
+        if (ComponentToRender) {
+            return <ComponentToRender onBack={handleBack} />;
+        }
+        return <GenericConverter name={activeConverter} onBack={handleBack} />;
     }
 
     return (
